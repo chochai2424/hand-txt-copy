@@ -76,6 +76,10 @@ self-view** in the corner, like a video call. **Click the self-view (or press `F
 to **fullscreen** with the full HUD — hand skeleton, fingertip cursor, pinch distance, the cursor
 active region, and status. Press `Esc` or click again to return.
 
+The **real Windows mouse pointer follows your fingertip** so you can see exactly where you're
+pointing on screen. Press **`M`** to toggle this off/on (default on; set `console.move_cursor` in
+the config). It is DPI- and multi-monitor-aware.
+
 This window is for monitoring only; it does not copy/paste. For the hands-free tool that actually
 copies over other apps, use `start-hand-txt-copy.bat` (the transparent overlay).
 

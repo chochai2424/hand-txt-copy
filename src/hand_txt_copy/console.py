@@ -24,6 +24,8 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from .camera import Camera
 from .config import Config
+from . import winmouse
+from .cursor import CursorMapper
 from .gestures import Gesture, GestureDetector, pinch_distance
 from .hand_tracker import HAND_CONNECTIONS, LANDMARK, HandTracker
 
@@ -55,6 +57,8 @@ class SharedState:
         self.hand_present: bool = False
         self.fps: float = 0.0
         self.mode: str = "MONITOR"
+        self.move_cursor: bool = True
+        self.screen_cursor: tuple[int, int] | None = None
 
 
 def status_of(state: SharedState) -> tuple[tuple[int, int, int], str]:
@@ -154,7 +158,8 @@ class VideoWidget(QtWidgets.QWidget):
         font.setPointSize(12 if self._detail else 9)
         p.setFont(font)
         p.setPen(QtGui.QColor(255, 255, 255))
-        lines = [f"gesture: {st.gesture.value}", f"{st.fps:4.1f} fps"]
+        cursor_txt = "mouse: ON (M)" if st.move_cursor else "mouse: OFF (M)"
+        lines = [f"gesture: {st.gesture.value}", cursor_txt, f"{st.fps:4.1f} fps"]
         if self._detail and st.pinch_dist is not None:
             lines.insert(1, f"pinch dist: {st.pinch_dist:.3f}")
         y = self.height() - 12 - 16 * (len(lines) - 1)
@@ -224,7 +229,10 @@ class DashboardPage(QtWidgets.QWidget):
         layout.addSpacing(18)
         layout.addLayout(legend)
         layout.addStretch(1)
-        hint = QtWidgets.QLabel("Click the webcam preview (bottom-right) or press F for fullscreen.")
+        hint = QtWidgets.QLabel(
+            "Click the webcam preview (bottom-right) or press F for fullscreen.   "
+            "The mouse pointer follows your finger — press M to toggle."
+        )
         hint.setStyleSheet("color:#6f7783;")
         layout.addWidget(hint)
 
@@ -268,6 +276,15 @@ class ConsoleWindow(QtWidgets.QMainWindow):
         self.detector = GestureDetector(cfg.gestures)
         self._last = time.perf_counter()
 
+        # Map the fingertip to a real screen pixel (physical, DPI-correct) to drive the OS pointer.
+        phys = winmouse.screen_size()
+        if phys is None:
+            geo = QtWidgets.QApplication.primaryScreen().geometry()
+            phys = (geo.width(), geo.height())
+        self._screen_size = phys
+        self.mapper = CursorMapper(cfg.cursor, self._screen_size)
+        self.state.move_cursor = cfg.console.move_cursor
+
         self.camera.start()
         self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self._tick)
@@ -288,6 +305,9 @@ class ConsoleWindow(QtWidgets.QMainWindow):
             self.exit_full()
         elif event.key() == QtCore.Qt.Key_F:
             self.exit_full() if self.stack.currentWidget() is self.full else self.enter_full()
+        elif event.key() == QtCore.Qt.Key_M:
+            self.state.move_cursor = not self.state.move_cursor
+            log.info("OS cursor control: %s", "ON" if self.state.move_cursor else "OFF")
         else:
             super().keyPressEvent(event)
 
@@ -315,6 +335,10 @@ class ConsoleWindow(QtWidgets.QMainWindow):
             tip = landmarks[LANDMARK.INDEX_TIP]
             self.state.cursor_norm = (float(tip[0]), float(tip[1]))
             self.state.pinch_dist = pinch_distance(landmarks)
+            sx, sy = self.mapper.map(float(tip[0]), float(tip[1]), dt)
+            self.state.screen_cursor = (sx, sy)
+            if self.state.move_cursor:
+                self._move_os_cursor(sx, sy)
         else:
             self.state.cursor_norm = None
             self.state.pinch_dist = None
@@ -325,6 +349,11 @@ class ConsoleWindow(QtWidgets.QMainWindow):
             rgb.data, w, h, 3 * w, QtGui.QImage.Format_RGB888
         ).copy()
         self._refresh()
+
+    @staticmethod
+    def _move_os_cursor(x: int, y: int) -> None:
+        """Move the real Windows mouse pointer to a physical screen pixel."""
+        winmouse.move_to(x, y)
 
     def _refresh(self) -> None:
         self.dash.refresh()
@@ -341,6 +370,8 @@ def run_console(cfg: Config) -> int:
     """Launch the console window and run the Qt event loop."""
     import sys
 
+    # Must precede QApplication so Qt, screen metrics, and cursor coords all use physical pixels.
+    winmouse.set_dpi_aware()
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
     window = ConsoleWindow(cfg)
     window.show()

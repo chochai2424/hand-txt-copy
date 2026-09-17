@@ -72,6 +72,11 @@ class PasteConfig:
 
 
 @dataclass
+class ConsoleConfig:
+    move_cursor: bool = True  # move the real OS mouse pointer to follow the fingertip
+
+
+@dataclass
 class OverlayConfig:
     enabled: bool = True
     cursor_radius: int = 12
@@ -97,6 +102,7 @@ class Config:
     screen: ScreenConfig = field(default_factory=ScreenConfig)
     ocr: OcrConfig = field(default_factory=OcrConfig)
     paste: PasteConfig = field(default_factory=PasteConfig)
+    console: ConsoleConfig = field(default_factory=ConsoleConfig)
     overlay: OverlayConfig = field(default_factory=OverlayConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
 

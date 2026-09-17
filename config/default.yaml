@@ -46,6 +46,9 @@ paste:
   mode: "clipboard"   # "clipboard" => send Ctrl+V; "type" => type the OCR text directly
   keystroke: "ctrl+v"
 
+console:
+  move_cursor: true   # in --console mode, move the real mouse pointer to follow the fingertip (toggle with M)
+
 overlay:
   enabled: true
   cursor_radius: 12
