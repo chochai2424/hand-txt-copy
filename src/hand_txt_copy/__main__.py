@@ -31,6 +31,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="path to the YAML config (default: config/default.yaml)",
     )
     parser.add_argument(
+        "--console",
+        action="store_true",
+        help="open the visible video-call-style monitor window (webcam + tracking + status)",
+    )
+    parser.add_argument(
         "--calibrate",
         action="store_true",
         help="launch the live calibration UI instead of running the app",
@@ -111,6 +116,11 @@ def main(argv: list[str] | None = None) -> int:
     log.info("loaded config from %s", args.config)
 
     try:
+        if args.console:
+            from .console import run_console
+
+            return run_console(cfg)
+
         if args.calibrate:
             from .calibration import run_calibration
 

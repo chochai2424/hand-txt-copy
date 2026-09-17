@@ -28,9 +28,13 @@ Per camera frame: `camera` → `hand_tracker` (MediaPipe landmarks) → `gesture
 
 ## Setup (PowerShell)
 
+Use **Python 3.11 or 3.12** — MediaPipe has no wheels for 3.13 yet, and installing on 3.13 fails
+with `metadata-generation-failed`. Check your version with `py -0p`.
+
 ```powershell
-python -m venv .venv
+py -3.12 -m venv .venv                 # 3.11 also fine; NOT 3.13
 .\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 pip install -r requirements-dev.txt   # for tests/lint
 ```
@@ -52,6 +56,23 @@ python scripts\check_camera.py          # find your webcam index
 python -m hand_txt_copy                  # run with config/default.yaml
 python -m hand_txt_copy --config my.yaml # run with a custom config
 ```
+
+### Monitor window (video-call style)
+
+A visible window for setup, demos, and checking that the camera and gestures work — double-click
+`console-hand-txt-copy.bat`, or:
+
+```powershell
+python -m hand_txt_copy --console
+```
+
+It shows a large dashboard (status, live gesture, FPS, gesture legend) with a small **webcam
+self-view** in the corner, like a video call. **Click the self-view (or press `F`)** to expand it
+to **fullscreen** with the full HUD — hand skeleton, fingertip cursor, pinch distance, the cursor
+active region, and status. Press `Esc` or click again to return.
+
+This window is for monitoring only; it does not copy/paste. For the hands-free tool that actually
+copies over other apps, use `start-hand-txt-copy.bat` (the transparent overlay).
 
 ## Run in the background (double-click, no console)
 

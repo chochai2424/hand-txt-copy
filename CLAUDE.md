@@ -22,6 +22,9 @@ Setup (PowerShell):
 Run:
 - `python -m hand_txt_copy` — start the app with `config/default.yaml`.
 - `python -m hand_txt_copy --config path\to\config.yaml` — run with a specific config.
+- `python -m hand_txt_copy --console` — visible video-call-style monitor window (webcam feed,
+  hand skeleton, cursor, gesture, status), with a PiP self-view that expands to fullscreen
+  (`F`/`Esc`). Monitoring only, no clipboard writes. See `console.py`.
 - `python -m hand_txt_copy --calibrate [--out config\station.yaml]` — live tuning UI; writes a
   per-station config (leaves `default.yaml` intact). See `calibration.py`.
 - `python scripts/check_camera.py` — list/preview cameras to find the right index.
