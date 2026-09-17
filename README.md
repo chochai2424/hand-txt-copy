@@ -1,5 +1,8 @@
 # hand-txt-copy
 
+[![tests](https://github.com/chochai2424/hand-txt-copy/actions/workflows/tests.yml/badge.svg)](https://github.com/chochai2424/hand-txt-copy/actions/workflows/tests.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Hands-free, webcam-driven **copy/paste** for an AOI (Automated Optical Inspection) station where
 there is no room for a mouse or keyboard. The operator points at the screen with a finger to move a
 cursor, **pinch-drags** to select a region, and gestures to **copy** (both the image *and* OCR'd

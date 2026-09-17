@@ -1,0 +1,35 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # The unit tests cover the pure logic (gestures, cursor, selection, config) and the clipboard
+      # format-building with a fake backend. They import MediaPipe / OpenCV / PySide6 / pywin32
+      # only lazily inside functions the tests never call, so CI installs just the light deps and
+      # runs on Linux — no camera, display, or Windows-only packages required.
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy PyYAML Pillow pytest
+
+      - name: Run tests
+        run: pytest
