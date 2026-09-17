@@ -1,0 +1,58 @@
+# Default configuration for hand-txt-copy.
+# All tunables live here so logic modules never hard-code thresholds.
+
+camera:
+  index: 0            # webcam index (use scripts/check_camera.py to find it)
+  width: 1280         # requested capture width
+  height: 720         # requested capture height
+  fps: 30
+  mirror: true        # flip horizontally so movement feels like a mirror
+
+hand_tracker:
+  max_num_hands: 1
+  model_complexity: 1          # 0 = fastest, 1 = balanced
+  min_detection_confidence: 0.6
+  min_tracking_confidence: 0.5
+
+gestures:
+  # Distances are in normalized landmark units (0..1), resolution-independent.
+  pinch_on_distance: 0.05      # thumb-index closer than this => pinch engaged
+  pinch_off_distance: 0.08     # must open past this to release (hysteresis)
+  debounce_frames: 3           # a gesture must persist this many frames to fire
+
+cursor:
+  # Active region inside the camera frame (fraction to ignore at each edge),
+  # so the operator does not need to reach the frame edges.
+  margin_x: 0.15
+  margin_y: 0.15
+  # One-Euro filter parameters (larger min_cutoff = less lag; larger beta = less lag on fast moves).
+  one_euro_min_cutoff: 1.0
+  one_euro_beta: 0.007
+  one_euro_d_cutoff: 1.0
+
+screen:
+  monitor: 1          # mss monitor index (1 = primary; 0 = the virtual "all monitors" box)
+
+ocr:
+  enabled: true
+  language: "eng"
+  # Full path to the Tesseract executable. Leave null to use the system PATH.
+  tesseract_cmd: null
+  # e.g. "C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
+
+paste:
+  mode: "clipboard"   # "clipboard" => send Ctrl+V; "type" => type the OCR text directly
+  keystroke: "ctrl+v"
+
+overlay:
+  enabled: true
+  cursor_radius: 12
+  cursor_color: [0, 200, 255]      # RGB
+  selection_color: [0, 200, 255]
+  toast_ms: 1500
+
+logging:
+  level: "INFO"
+  file: "logs/hand-txt-copy.log"
+  max_bytes: 1048576
+  backup_count: 3
