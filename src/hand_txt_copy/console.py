@@ -22,12 +22,17 @@ import time
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from .camera import Camera
-from .config import Config
 from . import winmouse
+from .camera import Camera
+from .capture import ScreenCapture
+from .clipboard import Clipboard
+from .config import Config
 from .cursor import CursorMapper
 from .gestures import Gesture, GestureDetector, pinch_distance
 from .hand_tracker import HAND_CONNECTIONS, LANDMARK, HandTracker
+from .ocr import OcrEngine
+from .paste import Paster
+from .selection import Rect, Selection, is_usable
 
 log = logging.getLogger(__name__)
 
@@ -249,6 +254,82 @@ class DashboardPage(QtWidgets.QWidget):
         self._status.setStyleSheet(f"font-size:18px; font-weight:600; color:rgb{rgb};")
 
 
+class ScreenOverlay(QtWidgets.QWidget):
+    """Full-screen, always-on-top, click-through overlay drawn over ALL windows.
+
+    Renders the mini status/action badge in the top-left corner and the live selection rectangle
+    while the operator is drawing one. It never takes keyboard focus (so paste reaches the app
+    underneath) and never receives mouse input (so it does not block clicks).
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._badge_rgb = (240, 180, 40)
+        self._badge_text = "starting…"
+        self._selection: QtCore.QRect | None = None
+
+        self.setWindowFlags(
+            QtCore.Qt.FramelessWindowHint
+            | QtCore.Qt.WindowStaysOnTopHint
+            | QtCore.Qt.Tool
+            | QtCore.Qt.WindowTransparentForInput
+            | QtCore.Qt.WindowDoesNotAcceptFocus
+        )
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
+        self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
+        self.setAttribute(QtCore.Qt.WA_ShowWithoutActivating, True)
+        self.setGeometry(QtWidgets.QApplication.primaryScreen().geometry())
+
+    def showEvent(self, event: QtGui.QShowEvent) -> None:  # noqa: N802 (Qt override)
+        super().showEvent(event)
+        try:
+            import win32con
+            import win32gui
+
+            hwnd = int(self.winId())
+            ex = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
+            win32gui.SetWindowLong(
+                hwnd, win32con.GWL_EXSTYLE,
+                ex | win32con.WS_EX_NOACTIVATE | win32con.WS_EX_TRANSPARENT,
+            )
+        except Exception as exc:
+            log.debug("could not apply WS_EX_NOACTIVATE to overlay: %s", exc)
+
+    def set_badge(self, rgb: tuple[int, int, int], text: str) -> None:
+        self._badge_rgb, self._badge_text = rgb, text
+        self.update()
+
+    def set_selection(self, rect: QtCore.QRect | None) -> None:
+        self._selection = rect
+        self.update()
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: N802 (Qt override)
+        p = QtGui.QPainter(self)
+        p.setRenderHint(QtGui.QPainter.Antialiasing, True)
+
+        if self._selection is not None:
+            color = QtGui.QColor(0, 200, 255)
+            p.setPen(QtGui.QPen(color, 2, QtCore.Qt.DashLine))
+            fill = QtGui.QColor(color)
+            fill.setAlpha(40)
+            p.setBrush(fill)
+            p.drawRect(self._selection)
+
+        # Mini badge, top-left.
+        p.setPen(QtCore.Qt.NoPen)
+        p.setBrush(QtGui.QColor(20, 24, 30, 210))
+        badge = QtCore.QRectF(16, 16, 210, 40)
+        p.drawRoundedRect(badge, 10, 10)
+        p.setBrush(QtGui.QColor(*self._badge_rgb))
+        p.drawEllipse(QtCore.QPointF(38, 36), 8, 8)
+        p.setPen(QtGui.QColor(235, 238, 242))
+        font = p.font()
+        font.setPointSize(11)
+        font.setBold(True)
+        p.setFont(font)
+        p.drawText(QtCore.QRectF(58, 16, 160, 40), QtCore.Qt.AlignVCenter, self._badge_text)
+
+
 class ConsoleWindow(QtWidgets.QMainWindow):
     def __init__(self, cfg: Config) -> None:
         super().__init__()
@@ -284,6 +365,22 @@ class ConsoleWindow(QtWidgets.QMainWindow):
         self._screen_size = phys
         self.mapper = CursorMapper(cfg.cursor, self._screen_size)
         self.state.move_cursor = cfg.console.move_cursor
+        self._dpr = QtWidgets.QApplication.primaryScreen().devicePixelRatio() or 1.0
+
+        # Copy/paste effect modules and finite-state machine (mirrors app.App).
+        self.screen_capture = ScreenCapture(cfg.screen)
+        self.ocr = OcrEngine(cfg.ocr)
+        self.clipboard = Clipboard()
+        self.paster = Paster(cfg.paste)
+        self._fsm = "IDLE"  # IDLE | SELECTING | CAPTURING
+        self._selection: Selection | None = None
+        self._toast_text = "Ready"
+        self._toast_rgb = _STATUS_AMBER[0]
+        self._toast_until = 0.0
+
+        # Always-on-top badge + selection rectangle, visible over every other window.
+        self.overlay = ScreenOverlay()
+        self.overlay.show()
 
         self.camera.start()
         self.timer = QtCore.QTimer(self)
@@ -343,12 +440,80 @@ class ConsoleWindow(QtWidgets.QMainWindow):
             self.state.cursor_norm = None
             self.state.pinch_dist = None
 
+        self._dispatch(self.state.gesture)
+
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         h, w = rgb.shape[:2]
         self.state.qimage = QtGui.QImage(
             rgb.data, w, h, 3 * w, QtGui.QImage.Format_RGB888
         ).copy()
         self._refresh()
+
+    # --- copy / paste / cancel state machine ---------------------------------
+    def _dispatch(self, gesture: Gesture) -> None:
+        if self._fsm == "CAPTURING":
+            return  # capture in progress (screenshot pending); ignore input briefly
+
+        if gesture == Gesture.FIST:
+            if self._fsm != "IDLE" or self._selection is not None:
+                self._toast("Cancelled", (240, 180, 40))
+            self._selection = None
+            self._fsm = "IDLE"
+            return
+
+        if self._fsm == "IDLE":
+            if gesture == Gesture.PINCH:
+                self._selection = Selection(self.state.screen_cursor)
+                self._fsm = "SELECTING"
+            elif gesture == Gesture.OPEN_PALM:
+                self._do_paste()
+        elif self._fsm == "SELECTING":
+            if gesture == Gesture.PINCH and self._selection is not None:
+                self._selection.update(self.state.screen_cursor)
+            else:  # pinch released
+                self._finish_selection()
+
+    def _finish_selection(self) -> None:
+        sel, self._selection = self._selection, None
+        if sel is None:
+            self._fsm = "IDLE"
+            return
+        rect = sel.rect()
+        if not is_usable(rect):
+            self._fsm = "IDLE"
+            self._toast("Selection too small", (240, 180, 40))
+            return
+        # Hide our overlay so the screenshot does not include the selection rectangle/badge,
+        # then grab on the next event-loop turn once it has repainted away.
+        self._fsm = "CAPTURING"
+        self.overlay.hide()
+        QtCore.QTimer.singleShot(60, lambda: self._capture(rect))
+
+    def _capture(self, rect: Rect) -> None:
+        try:
+            image = self.screen_capture.grab(rect)
+            text = self.ocr.read_text(image)
+            self.clipboard.set(image=image, text=text or None)
+            self._toast(f"Copied ({len(text)} chars)" if text else "Copied image", (60, 200, 90))
+        except Exception:
+            log.exception("capture failed")
+            self._toast("Copy failed", (220, 60, 60))
+        finally:
+            self.overlay.show()
+            self._fsm = "IDLE"
+
+    def _do_paste(self) -> None:
+        try:
+            self.paster.paste()
+            self._toast("Pasted", (60, 200, 90))
+        except Exception:
+            log.exception("paste failed")
+            self._toast("Paste failed", (220, 60, 60))
+
+    def _toast(self, text: str, rgb: tuple[int, int, int]) -> None:
+        self._toast_text, self._toast_rgb = text, rgb
+        self._toast_until = time.monotonic() + (self.cfg.overlay.toast_ms / 1000.0)
+        log.info("action: %s", text)
 
     @staticmethod
     def _move_os_cursor(x: int, y: int) -> None:
@@ -358,11 +523,34 @@ class ConsoleWindow(QtWidgets.QMainWindow):
     def _refresh(self) -> None:
         self.dash.refresh()
         (self.full if self.stack.currentWidget() is self.full else self.pip).update()
+        self._refresh_overlay()
+
+    def _refresh_overlay(self) -> None:
+        # Badge: show the active toast, else the live tracking/selecting status.
+        if time.monotonic() < self._toast_until:
+            self.overlay.set_badge(self._toast_rgb, self._toast_text)
+        elif self._fsm == "SELECTING":
+            self.overlay.set_badge((0, 200, 255), "Selecting…")
+        else:
+            rgb, label = status_of(self.state)
+            self.overlay.set_badge(rgb, label.capitalize())
+
+        # Selection rectangle, converted from physical pixels to the overlay's logical pixels.
+        if self._fsm == "SELECTING" and self._selection is not None:
+            r = self._selection.rect()
+            d = self._dpr
+            self.overlay.set_selection(
+                QtCore.QRect(int(r.left / d), int(r.top / d), int(r.width / d), int(r.height / d))
+            )
+        else:
+            self.overlay.set_selection(None)
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # noqa: N802 (Qt override)
         self.timer.stop()
         self.camera.stop()
         self.tracker.close()
+        self.screen_capture.close()
+        self.overlay.close()
         super().closeEvent(event)
 
 

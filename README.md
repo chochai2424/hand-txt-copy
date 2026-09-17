@@ -80,8 +80,15 @@ The **real Windows mouse pointer follows your fingertip** so you can see exactly
 pointing on screen. Press **`M`** to toggle this off/on (default on; set `console.move_cursor` in
 the config). It is DPI- and multi-monitor-aware.
 
-This window is for monitoring only; it does not copy/paste. For the hands-free tool that actually
-copies over other apps, use `start-hand-txt-copy.bat` (the transparent overlay).
+The console is a **full hands-free tool**: pinch-drag to select a screen region, release to copy
+(image + OCR text), open palm to paste into the focused window, fist to cancel — and a small
+**always-on-top badge in the top-left** shows the live status and last action
+(Ready / Selecting / Copied / Pasted / Cancelled). The badge and the selection rectangle stay
+visible above other windows, so you keep feedback even when the console is covered or minimized.
+
+> If the mouse stops moving over one particular window, that window is likely running as
+> Administrator — Windows blocks synthetic input from a normal-privilege app onto it. Run
+> hand-txt-copy as administrator to control such windows.
 
 ## Run in the background (double-click, no console)
 

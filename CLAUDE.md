@@ -22,9 +22,12 @@ Setup (PowerShell):
 Run:
 - `python -m hand_txt_copy` — start the app with `config/default.yaml`.
 - `python -m hand_txt_copy --config path\to\config.yaml` — run with a specific config.
-- `python -m hand_txt_copy --console` — visible video-call-style monitor window (webcam feed,
-  hand skeleton, cursor, gesture, status), with a PiP self-view that expands to fullscreen
-  (`F`/`Esc`). Monitoring only, no clipboard writes. See `console.py`.
+- `python -m hand_txt_copy --console` — visible video-call-style window (webcam feed, hand
+  skeleton, cursor, gesture, status), PiP self-view that expands to fullscreen (`F`/`Esc`). It is a
+  full tool: moves the real OS pointer (see `winmouse.py`; `M` toggles), runs the copy/paste/cancel
+  FSM, and shows an always-on-top top-left badge + selection rectangle via `console.ScreenOverlay`
+  (frameless, topmost, click-through, non-activating). Before capture it hides that overlay so the
+  screenshot excludes it. See `console.py`.
 - `python -m hand_txt_copy --calibrate [--out config\station.yaml]` — live tuning UI; writes a
   per-station config (leaves `default.yaml` intact). See `calibration.py`.
 - `python scripts/check_camera.py` — list/preview cameras to find the right index.
