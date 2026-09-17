@@ -49,6 +49,11 @@ ocr:
 
 If Tesseract is absent, copying still works — only the image is placed on the clipboard.
 
+**Hand model:** on first run the app downloads Google's `hand_landmarker.task` (~7.5 MB) to
+`models/` (needs internet once). To pre-stage it offline, download it from
+`https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`
+and set `hand_tracker.model_path` in the config to its location.
+
 ## Run
 
 ```powershell

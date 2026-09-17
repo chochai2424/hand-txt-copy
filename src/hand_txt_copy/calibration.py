@@ -26,7 +26,7 @@ from .camera import Camera
 from .config import Config, save_config
 from .cursor import CursorMapper, _remap_axis
 from .gestures import Gesture, classify, pinch_distance
-from .hand_tracker import LANDMARK, HandTracker
+from .hand_tracker import HAND_CONNECTIONS, LANDMARK, HandTracker
 
 log = logging.getLogger(__name__)
 
@@ -156,9 +156,7 @@ def run_calibration(cfg: Config, out_path: str) -> int:
 
     camera = Camera(cfg.camera)
     tracker = HandTracker(cfg.hand_tracker)
-    import mediapipe as mp
-
-    connections = mp.solutions.hands.HAND_CONNECTIONS
+    connections = HAND_CONNECTIONS
 
     screen_size = _screen_size(cfg)
     mapper = CursorMapper(cfg.cursor, screen_size)

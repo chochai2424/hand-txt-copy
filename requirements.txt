@@ -1,6 +1,8 @@
 # Runtime dependencies for hand-txt-copy (Windows 11, Python 3.11+)
 opencv-python>=4.9
-mediapipe>=0.10.11
+# Uses the MediaPipe Tasks API (mediapipe.tasks.python.vision.HandLandmarker); a
+# hand_landmarker.task model is downloaded on first run. Pinned to the tested 0.10.x line.
+mediapipe>=0.10.14,<0.11
 numpy>=1.26,<2.0
 mss>=9.0
 Pillow>=10.0

@@ -25,7 +25,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from .camera import Camera
 from .config import Config
 from .gestures import Gesture, GestureDetector, pinch_distance
-from .hand_tracker import LANDMARK, HandTracker
+from .hand_tracker import HAND_CONNECTIONS, LANDMARK, HandTracker
 
 log = logging.getLogger(__name__)
 
@@ -249,9 +249,7 @@ class ConsoleWindow(QtWidgets.QMainWindow):
         self.resize(1000, 680)
 
         self.state = SharedState()
-        import mediapipe as mp
-
-        self._conn = mp.solutions.hands.HAND_CONNECTIONS
+        self._conn = HAND_CONNECTIONS
 
         self.pip = VideoWidget(self.state, self._conn, cfg, detail=False)
         self.full = VideoWidget(self.state, self._conn, cfg, detail=True)

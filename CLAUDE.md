@@ -81,3 +81,8 @@ Key boundaries to preserve when editing:
 - Cursor jitter is tamed with a One-Euro filter in `cursor.py`; tune via config, not code.
 - MediaPipe landmarks are passed around as a `(21, 3)` numpy array (x, y normalized; z relative
   depth). Landmark indices follow MediaPipe's hand model (see `hand_tracker.LANDMARK`).
+- `hand_tracker.py` uses the MediaPipe **Tasks** API (`vision.HandLandmarker`, VIDEO mode) — the
+  legacy `mediapipe.solutions.hands` was removed from current MediaPipe. It needs a
+  `hand_landmarker.task` model, auto-downloaded on first run to `hand_tracker.model_path`. The hand
+  skeleton is the hardcoded `hand_tracker.HAND_CONNECTIONS` (so drawing code and CI need no
+  MediaPipe import). MediaPipe is pinned to the tested `0.10.x` line in `requirements.txt`.

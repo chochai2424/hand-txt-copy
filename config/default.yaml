@@ -10,8 +10,10 @@ camera:
 
 hand_tracker:
   max_num_hands: 1
-  model_complexity: 1          # 0 = fastest, 1 = balanced
+  model_complexity: 1                        # kept for back-compat; unused by the Tasks API
+  model_path: "models/hand_landmarker.task"  # downloaded on first run if missing
   min_detection_confidence: 0.6
+  min_hand_presence_confidence: 0.5
   min_tracking_confidence: 0.5
 
 gestures:
