@@ -28,6 +28,7 @@ _FINGER_TIP_PIP = {
 class Gesture(Enum):
     NONE = "none"          # no hand / unrecognized
     POINT = "point"        # index extended, other fingers curled
+    CLICK = "click"        # index + middle extended (two-finger), ring + pinky curled
     PINCH = "pinch"        # thumb tip and index tip close together
     OPEN_PALM = "palm"     # all four fingers extended
     FIST = "fist"          # all fingers curled
@@ -72,6 +73,8 @@ def classify(landmarks: np.ndarray | None, cfg: GesturesConfig) -> Gesture:
 
     if ext["index"] and not ext["middle"] and not ext["ring"] and not ext["pinky"]:
         return Gesture.POINT
+    if ext["index"] and ext["middle"] and not ext["ring"] and not ext["pinky"]:
+        return Gesture.CLICK
     if count >= 4:
         return Gesture.OPEN_PALM
     if count == 0:

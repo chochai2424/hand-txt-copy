@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from conftest import fist, open_palm, pinch, pointing
+from conftest import fist, make_landmarks, open_palm, pinch, pointing
 
 from hand_txt_copy.config import GesturesConfig
 from hand_txt_copy.gestures import Gesture, GestureDetector, classify, pinch_distance
@@ -15,6 +15,16 @@ def test_pinch_distance_small_when_pinching():
 
 
 def test_classify_point():
+    assert classify(pointing(), cfg()) == Gesture.POINT
+
+
+def test_classify_click_two_fingers():
+    # Index + middle extended, ring + pinky curled, thumb away (not a pinch) => CLICK.
+    lm = make_landmarks(index=True, middle=True)
+    assert classify(lm, cfg()) == Gesture.CLICK
+
+
+def test_point_is_not_click():
     assert classify(pointing(), cfg()) == Gesture.POINT
 
 

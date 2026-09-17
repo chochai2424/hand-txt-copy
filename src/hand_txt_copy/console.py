@@ -42,6 +42,7 @@ _STATUS_AMBER = ((240, 180, 40), "no hand")
 
 _LEGEND = [
     ("Point (index finger)", "move cursor"),
+    ("Two fingers (index+middle)", "click"),
     ("Pinch + drag", "select a region"),
     ("Release pinch", "copy image + text"),
     ("Open palm", "paste"),
@@ -374,6 +375,7 @@ class ConsoleWindow(QtWidgets.QMainWindow):
         self.paster = Paster(cfg.paste)
         self._fsm = "IDLE"  # IDLE | SELECTING | CAPTURING
         self._selection: Selection | None = None
+        self._last_gesture = Gesture.NONE
         self._toast_text = "Ready"
         self._toast_rgb = _STATUS_AMBER[0]
         self._toast_until = 0.0
@@ -449,13 +451,17 @@ class ConsoleWindow(QtWidgets.QMainWindow):
         ).copy()
         self._refresh()
 
-    # --- copy / paste / cancel state machine ---------------------------------
+    # --- click / copy / paste / cancel state machine -------------------------
     def _dispatch(self, gesture: Gesture) -> None:
+        # One-shot actions fire only on the transition INTO the gesture, not every frame it is held.
+        changed = gesture != self._last_gesture
+        self._last_gesture = gesture
+
         if self._fsm == "CAPTURING":
             return  # capture in progress (screenshot pending); ignore input briefly
 
         if gesture == Gesture.FIST:
-            if self._fsm != "IDLE" or self._selection is not None:
+            if changed and (self._fsm != "IDLE" or self._selection is not None):
                 self._toast("Cancelled", (240, 180, 40))
             self._selection = None
             self._fsm = "IDLE"
@@ -465,7 +471,9 @@ class ConsoleWindow(QtWidgets.QMainWindow):
             if gesture == Gesture.PINCH:
                 self._selection = Selection(self.state.screen_cursor)
                 self._fsm = "SELECTING"
-            elif gesture == Gesture.OPEN_PALM:
+            elif gesture == Gesture.CLICK and changed:
+                self._do_click()
+            elif gesture == Gesture.OPEN_PALM and changed:
                 self._do_paste()
         elif self._fsm == "SELECTING":
             if gesture == Gesture.PINCH and self._selection is not None:
@@ -501,6 +509,10 @@ class ConsoleWindow(QtWidgets.QMainWindow):
         finally:
             self.overlay.show()
             self._fsm = "IDLE"
+
+    def _do_click(self) -> None:
+        winmouse.click()
+        self._toast("Click", (0, 200, 255))
 
     def _do_paste(self) -> None:
         try:

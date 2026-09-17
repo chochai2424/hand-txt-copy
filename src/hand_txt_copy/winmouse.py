@@ -16,6 +16,8 @@ import logging
 log = logging.getLogger(__name__)
 
 _MOUSEEVENTF_MOVE = 0x0001
+_MOUSEEVENTF_LEFTDOWN = 0x0002
+_MOUSEEVENTF_LEFTUP = 0x0004
 _MOUSEEVENTF_ABSOLUTE = 0x8000
 _MOUSEEVENTF_VIRTUALDESK = 0x4000
 
@@ -115,3 +117,16 @@ def move_to(x: int, y: int) -> None:
         if not _warned:
             _warned = True
             log.warning("could not move the OS mouse pointer: %s", exc)
+
+
+def click() -> None:
+    """Perform a left click at the current pointer position (down + up)."""
+    try:
+        send_input, INPUT, MOUSEINPUT, ctypes = _ensure_send_input()
+        for flag in (_MOUSEEVENTF_LEFTDOWN, _MOUSEEVENTF_LEFTUP):
+            inp = INPUT()
+            inp.type = 0  # INPUT_MOUSE
+            inp.mi = MOUSEINPUT(0, 0, 0, flag, 0, None)
+            send_input(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+    except Exception as exc:
+        log.debug("could not send mouse click: %s", exc)

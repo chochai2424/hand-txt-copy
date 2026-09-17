@@ -16,11 +16,16 @@ Per camera frame: `camera` → `hand_tracker` (MediaPipe landmarks) → `gesture
 `app` state machine → effects (`cursor`, `selection`, `capture` + `ocr` → `clipboard`, `paste`) →
 `overlay`. See `CLAUDE.md` for the architecture and module boundaries.
 
+![Workflow diagram](docs/workflow.svg)
+
 ### Gestures
+
+![Hand gestures and their commands](docs/gestures.svg)
 
 | Gesture | Action |
 |---------|--------|
 | Point (index finger) | Move the on-screen cursor |
+| Two fingers (index + middle) | Left click |
 | Pinch (thumb + index) and drag | Draw the selection rectangle |
 | Release the pinch | Copy the region: image **and** OCR text → clipboard |
 | Open palm | Paste into the focused app (Ctrl+V) |
@@ -80,7 +85,8 @@ The **real Windows mouse pointer follows your fingertip** so you can see exactly
 pointing on screen. Press **`M`** to toggle this off/on (default on; set `console.move_cursor` in
 the config). It is DPI- and multi-monitor-aware.
 
-The console is a **full hands-free tool**: pinch-drag to select a screen region, release to copy
+The console is a **full hands-free tool**: point to move the pointer, hold up two fingers
+(index + middle) to left-click, pinch-drag to select a screen region, release to copy
 (image + OCR text), open palm to paste into the focused window, fist to cancel — and a small
 **always-on-top badge in the top-left** shows the live status and last action
 (Ready / Selecting / Copied / Pasted / Cancelled). The badge and the selection rectangle stay

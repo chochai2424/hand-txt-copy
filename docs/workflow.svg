@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="560" viewBox="0 0 960 560" font-family="Segoe UI, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#94a3b8"/>
+    </marker>
+    <style>
+      .box{fill:#eaf2fb;stroke:#2b6cb0;stroke-width:2;}
+      .eff{fill:#e8f8f0;stroke:#0f9d63;stroke-width:2;}
+      .out{fill:#fef3e2;stroke:#d97706;stroke-width:2;}
+      .t{fill:#1a202c;font-size:15px;font-weight:600;}
+      .s{fill:#5b6b7b;font-size:12px;}
+      .lbl{fill:#0f172a;font-size:14px;font-weight:600;}
+      .flow{stroke:#94a3b8;stroke-width:2;fill:none;}
+      .dash{stroke:#94a3b8;stroke-width:2;fill:none;stroke-dasharray:5 4;}
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="960" height="560" rx="18" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="40" y="48" font-size="26" font-weight="700" fill="#1a202c">hand-txt-copy — workflow</text>
+
+  <!-- ===== pipeline row ===== -->
+  <g>
+    <rect class="box" x="30"  y="80" width="190" height="66" rx="12"/>
+    <text class="t" x="125" y="110" text-anchor="middle">Webcam frame</text>
+    <text class="s" x="125" y="130" text-anchor="middle">threaded capture (OpenCV)</text>
+
+    <rect class="box" x="270" y="80" width="190" height="66" rx="12"/>
+    <text class="t" x="365" y="110" text-anchor="middle">Hand landmarks</text>
+    <text class="s" x="365" y="130" text-anchor="middle">MediaPipe HandLandmarker</text>
+
+    <rect class="box" x="510" y="80" width="190" height="66" rx="12"/>
+    <text class="t" x="605" y="110" text-anchor="middle">Gesture</text>
+    <text class="s" x="605" y="130" text-anchor="middle">debounce + hysteresis</text>
+
+    <rect class="box" x="750" y="80" width="180" height="66" rx="12"/>
+    <text class="t" x="840" y="110" text-anchor="middle">State machine</text>
+    <text class="s" x="840" y="130" text-anchor="middle">idle · selecting</text>
+
+    <line class="flow" x1="220" y1="113" x2="268" y2="113" marker-end="url(#arrow)"/>
+    <line class="flow" x1="460" y1="113" x2="508" y2="113" marker-end="url(#arrow)"/>
+    <line class="flow" x1="700" y1="113" x2="748" y2="113" marker-end="url(#arrow)"/>
+  </g>
+
+  <!-- bus from state machine down to effects -->
+  <line class="flow" x1="840" y1="146" x2="840" y2="180"/>
+  <line class="flow" x1="95" y1="180" x2="840" y2="180"/>
+  <line class="flow" x1="95"  y1="180" x2="95"  y2="214" marker-end="url(#arrow)"/>
+  <line class="flow" x1="280" y1="180" x2="280" y2="214" marker-end="url(#arrow)"/>
+  <line class="flow" x1="465" y1="180" x2="465" y2="214" marker-end="url(#arrow)"/>
+  <line class="flow" x1="650" y1="180" x2="650" y2="214" marker-end="url(#arrow)"/>
+  <line class="flow" x1="835" y1="180" x2="835" y2="214" marker-end="url(#arrow)"/>
+
+  <!-- ===== effects row ===== -->
+  <g>
+    <rect class="eff" x="20"  y="216" width="150" height="60" rx="12"/>
+    <text class="lbl" x="95" y="243" text-anchor="middle">Move cursor</text>
+    <text class="s"  x="95" y="261" text-anchor="middle">point → OS pointer</text>
+
+    <rect class="eff" x="205" y="216" width="150" height="60" rx="12"/>
+    <text class="lbl" x="280" y="243" text-anchor="middle">Left click</text>
+    <text class="s"  x="280" y="261" text-anchor="middle">two fingers</text>
+
+    <rect class="eff" x="390" y="216" width="150" height="60" rx="12"/>
+    <text class="lbl" x="465" y="243" text-anchor="middle">Select → Copy</text>
+    <text class="s"  x="465" y="261" text-anchor="middle">pinch-drag, release</text>
+
+    <rect class="eff" x="575" y="216" width="150" height="60" rx="12"/>
+    <text class="lbl" x="650" y="243" text-anchor="middle">Paste</text>
+    <text class="s"  x="650" y="261" text-anchor="middle">open palm</text>
+
+    <rect class="eff" x="760" y="216" width="150" height="60" rx="12"/>
+    <text class="lbl" x="835" y="243" text-anchor="middle">Cancel</text>
+    <text class="s"  x="835" y="261" text-anchor="middle">fist</text>
+  </g>
+
+  <!-- ===== outputs ===== -->
+  <line class="flow" x1="465" y1="276" x2="465" y2="330" marker-end="url(#arrow)"/>
+  <rect class="out" x="360" y="332" width="210" height="66" rx="12"/>
+  <text class="t" x="465" y="362" text-anchor="middle">Clipboard</text>
+  <text class="s" x="465" y="382" text-anchor="middle">image (CF_DIB) + OCR text</text>
+
+  <line class="flow" x1="650" y1="276" x2="650" y2="330" marker-end="url(#arrow)"/>
+  <rect class="out" x="600" y="332" width="210" height="66" rx="12"/>
+  <text class="t" x="705" y="362" text-anchor="middle">Focused window</text>
+  <text class="s" x="705" y="382" text-anchor="middle">Ctrl+V</text>
+
+  <!-- clipboard feeds paste -->
+  <path class="dash" d="M570,365 C588,365 588,250 650,250" marker-end="url(#arrow)"/>
+
+  <!-- ===== overlay feedback ===== -->
+  <rect class="box" x="30" y="446" width="900" height="66" rx="12" fill="#f5f3ff" stroke="#7c3aed"/>
+  <text class="t" x="480" y="476" text-anchor="middle" fill="#4c1d95">On-screen overlay (always on top, click-through)</text>
+  <text class="s" x="480" y="496" text-anchor="middle">fingertip cursor · selection rectangle · top-left status badge: Ready / Selecting / Copied / Pasted / Cancelled</text>
+  <path class="dash" d="M840,146 C905,300 905,300 905,444" marker-end="url(#arrow)"/>
+</svg>
