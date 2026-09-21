@@ -106,20 +106,27 @@ def _bootstrap_error(message: str) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
+
+    # When no explicit --config is given, prefer a calibrated per-station file if one exists
+    # (mirrors start-hand-txt-copy.bat), so saving from the console round-trips on the next run.
+    config_path = args.config
+    if config_path == _DEFAULT_CONFIG and args.out.is_file():
+        config_path = args.out
+
     try:
-        cfg = load_config(args.config)
+        cfg = load_config(config_path)
     except ConfigError as exc:
         _bootstrap_error(f"config error: {exc}")
         return 2
 
     setup_logging(cfg.logging)
-    log.info("loaded config from %s", args.config)
+    log.info("loaded config from %s", config_path)
 
     try:
         if args.console:
             from .console import run_console
 
-            return run_console(cfg)
+            return run_console(cfg, str(args.out))
 
         if args.calibrate:
             from .calibration import run_calibration

@@ -20,16 +20,23 @@ Setup (PowerShell):
   install the UB-Mannheim Windows build and set its path in `config/default.yaml` (`ocr.tesseract_cmd`).
 
 Run:
-- `python -m hand_txt_copy` — start the app with `config/default.yaml`.
+- `python -m hand_txt_copy` — start the app; when no `--config` is given it prefers
+  `config/station.yaml` if present (mirroring `start-hand-txt-copy.bat`), else `config/default.yaml`.
 - `python -m hand_txt_copy --config path\to\config.yaml` — run with a specific config.
 - `python -m hand_txt_copy --console` — visible video-call-style window (webcam feed, hand
   skeleton, cursor, gesture, status), PiP self-view that expands to fullscreen (`F`/`Esc`). It is a
   full tool: moves the real OS pointer (see `winmouse.py`; `M` toggles), runs the copy/paste/cancel
   FSM, and shows an always-on-top top-left badge + selection rectangle via `console.ScreenOverlay`
   (frameless, topmost, click-through, non-activating). Before capture it hides that overlay so the
-  screenshot excludes it. See `console.py`.
-- `python -m hand_txt_copy --calibrate [--out config\station.yaml]` — live tuning UI; writes a
-  per-station config (leaves `default.yaml` intact). See `calibration.py`.
+  screenshot excludes it. Press `C` (or the dashboard button) to open the in-window
+  **Configure / Calibrate** panel (`console.SettingsPanel`, a Qt dock): sliders for the calibration
+  tunables (reusing `calibration._TRACKBARS` + `_auto_pinch`) plus general settings (camera index,
+  OCR, paste mode, move-cursor default). Changes preview live; **Save** writes `config/station.yaml`
+  via `config.save_config` (the file auto-start prefers) and **Restart station app** bounces the
+  background instance so it reloads. See `console.py`.
+- `python -m hand_txt_copy --calibrate [--out config\station.yaml]` — standalone OpenCV live tuning
+  UI; writes a per-station config (leaves `default.yaml` intact). Same tunables as the console panel.
+  See `calibration.py`.
 - `python scripts/check_camera.py` — list/preview cameras to find the right index.
 
 Background launch (station): `start-hand-txt-copy.bat` runs the app via `pythonw.exe` (no console)

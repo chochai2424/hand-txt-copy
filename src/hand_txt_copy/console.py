@@ -19,14 +19,16 @@ from __future__ import annotations
 
 import logging
 import time
+from pathlib import Path
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from . import winmouse
+from .calibration import _TRACKBARS, _auto_pinch, _get, _set
 from .camera import Camera
 from .capture import ScreenCapture
 from .clipboard import Clipboard
-from .config import Config
+from .config import Config, save_config
 from .cursor import CursorMapper
 from .gestures import Gesture, GestureDetector, pinch_distance
 from .hand_tracker import HAND_CONNECTIONS, LANDMARK, HandTracker
@@ -242,6 +244,17 @@ class DashboardPage(QtWidgets.QWidget):
         hint.setStyleSheet("color:#6f7783;")
         layout.addWidget(hint)
 
+        self.configure_btn = QtWidgets.QPushButton("Configure / Calibrate  (C)")
+        self.configure_btn.setStyleSheet(
+            "QPushButton { background:#2b6cb0; color:#fff; border:none; padding:8px 16px;"
+            " border-radius:6px; font-weight:600; } QPushButton:hover { background:#3182ce; }"
+        )
+        self.configure_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(self.configure_btn)
+        row.addStretch(1)
+        layout.addLayout(row)
+
     def resizeEvent(self, event: QtGui.QResizeEvent) -> None:  # noqa: N802 (Qt override)
         margin = 20
         w = max(240, min(380, self.width() // 3))
@@ -251,7 +264,9 @@ class DashboardPage(QtWidgets.QWidget):
 
     def refresh(self) -> None:
         rgb, label = status_of(self._state)
-        self._status.setText(f"● {label}   |   {self._state.gesture.value}   |   {self._state.fps:4.1f} fps")
+        self._status.setText(
+            f"● {label}   |   {self._state.gesture.value}   |   {self._state.fps:4.1f} fps"
+        )
         self._status.setStyleSheet(f"font-size:18px; font-weight:600; color:rgb{rgb};")
 
 
@@ -290,7 +305,8 @@ class ScreenOverlay(QtWidgets.QWidget):
             hwnd = int(self.winId())
             ex = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
             win32gui.SetWindowLong(
-                hwnd, win32con.GWL_EXSTYLE,
+                hwnd,
+                win32con.GWL_EXSTYLE,
                 ex | win32con.WS_EX_NOACTIVATE | win32con.WS_EX_TRANSPARENT,
             )
         except Exception as exc:
@@ -331,10 +347,211 @@ class ScreenOverlay(QtWidgets.QWidget):
         p.drawText(QtCore.QRectF(58, 16, 160, 40), QtCore.Qt.AlignVCenter, self._badge_text)
 
 
+class SettingsPanel(QtWidgets.QWidget):
+    """Qt configure/calibrate panel bound to the live ``cfg``.
+
+    Sliders reuse the calibration tool's ``_TRACKBARS`` table and mutate ``cfg`` in place, so the
+    console's live preview (active region, pinch distance, gesture) updates as they move. Text/box
+    fields cover general settings. Save writes ``config/station.yaml`` (what auto-start prefers) and
+    Restart bounces the background station app so it reloads.
+    """
+
+    def __init__(self, window: ConsoleWindow) -> None:
+        super().__init__()
+        self._win = window
+        self.cfg = window.cfg
+        self._sliders: dict[tuple[str, str], tuple[QtWidgets.QSlider, int, QtWidgets.QLabel]] = {}
+
+        outer = QtWidgets.QVBoxLayout(self)
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        body = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(body)
+        scroll.setWidget(body)
+        outer.addWidget(scroll)
+
+        # --- Calibration group (reuse the calibration tool's tunables) --------
+        cal = QtWidgets.QGroupBox("Calibration")
+        cal_form = QtWidgets.QFormLayout(cal)
+        for label, path, scale, maximum in _TRACKBARS:
+            cal_form.addRow(label, self._make_slider_row(path, scale, maximum))
+        auto = QtWidgets.QPushButton("Auto-pinch (hold a pinch, then click)")
+        auto.clicked.connect(self._on_auto_pinch)
+        cal_form.addRow(auto)
+        layout.addWidget(cal)
+
+        # --- General group ----------------------------------------------------
+        gen = QtWidgets.QGroupBox("General")
+        gen_form = QtWidgets.QFormLayout(gen)
+
+        self._camera_index = QtWidgets.QSpinBox()
+        self._camera_index.setRange(0, 16)
+        self._camera_index.setValue(self.cfg.camera.index)
+        self._camera_index.valueChanged.connect(self._on_camera_index)
+        gen_form.addRow("Camera index", self._camera_index)
+
+        self._ocr_enabled = QtWidgets.QCheckBox()
+        self._ocr_enabled.setChecked(self.cfg.ocr.enabled)
+        self._ocr_enabled.toggled.connect(self._on_ocr_enabled)
+        gen_form.addRow("OCR enabled", self._ocr_enabled)
+
+        self._ocr_lang = QtWidgets.QLineEdit(self.cfg.ocr.language)
+        self._ocr_lang.editingFinished.connect(self._on_ocr_lang)
+        gen_form.addRow("OCR language", self._ocr_lang)
+
+        self._tess = QtWidgets.QLineEdit(self.cfg.ocr.tesseract_cmd or "")
+        self._tess.setPlaceholderText("path to tesseract.exe (blank = use PATH)")
+        self._tess.editingFinished.connect(self._on_tesseract)
+        gen_form.addRow("Tesseract path", self._tess)
+
+        self._paste_mode = QtWidgets.QComboBox()
+        self._paste_mode.addItems(["clipboard", "type"])
+        self._paste_mode.setCurrentText(self.cfg.paste.mode)
+        self._paste_mode.currentTextChanged.connect(self._on_paste_mode)
+        gen_form.addRow("Paste mode", self._paste_mode)
+
+        self._paste_key = QtWidgets.QLineEdit(self.cfg.paste.keystroke)
+        self._paste_key.editingFinished.connect(self._on_paste_key)
+        gen_form.addRow("Paste keystroke", self._paste_key)
+
+        self._move_cursor = QtWidgets.QCheckBox()
+        self._move_cursor.setChecked(self.cfg.console.move_cursor)
+        self._move_cursor.toggled.connect(self._on_move_cursor)
+        gen_form.addRow("Move OS cursor (default)", self._move_cursor)
+
+        layout.addWidget(gen)
+        layout.addStretch(1)
+
+        # --- Buttons + status -------------------------------------------------
+        self._status = QtWidgets.QLabel(
+            "Adjust settings; changes preview live. Save writes station.yaml."
+        )
+        self._status.setWordWrap(True)
+        self._status.setStyleSheet("color:#9aa4af;")
+        outer.addWidget(self._status)
+
+        btns = QtWidgets.QHBoxLayout()
+        save = QtWidgets.QPushButton("Save")
+        save.clicked.connect(self._on_save)
+        restart = QtWidgets.QPushButton("Restart station app")
+        restart.clicked.connect(self._on_restart)
+        close = QtWidgets.QPushButton("Close")
+        close.clicked.connect(lambda: self._win.toggle_settings())
+        btns.addWidget(save)
+        btns.addWidget(restart)
+        btns.addStretch(1)
+        btns.addWidget(close)
+        outer.addLayout(btns)
+
+    # --- slider plumbing -----------------------------------------------------
+    def _make_slider_row(
+        self, path: tuple[str, str], scale: int, maximum: int
+    ) -> QtWidgets.QWidget:
+        slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        slider.setMinimum(1 if path[1] == "debounce_frames" else 0)
+        slider.setMaximum(maximum)
+        slider.setValue(min(int(round(_get(self.cfg, path) * scale)), maximum))
+        value_label = QtWidgets.QLabel()
+        value_label.setMinimumWidth(56)
+        value_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self._sliders[path] = (slider, scale, value_label)
+        slider.valueChanged.connect(lambda raw, p=path: self._on_slider(p, raw))
+        self._update_value_label(path)
+
+        row = QtWidgets.QWidget()
+        h = QtWidgets.QHBoxLayout(row)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.addWidget(slider)
+        h.addWidget(value_label)
+        return row
+
+    def _value_from_raw(self, path: tuple[str, str], scale: int, raw: int) -> float | int:
+        if path[1] == "debounce_frames":
+            return max(1, int(raw))
+        return raw / scale if scale != 1 else raw
+
+    def _on_slider(self, path: tuple[str, str], raw: int) -> None:
+        slider, scale, _label = self._sliders[path]
+        _set(self.cfg, path, self._value_from_raw(path, scale, raw))
+        self._update_value_label(path)
+        self._win._apply_config_changes()
+
+    def _update_value_label(self, path: tuple[str, str]) -> None:
+        slider, scale, label = self._sliders[path]
+        value = self._value_from_raw(path, scale, slider.value())
+        label.setText(f"{value}" if isinstance(value, int) else f"{value:.3f}")
+
+    def _sync_sliders(self) -> None:
+        for path, (slider, scale, _label) in self._sliders.items():
+            slider.blockSignals(True)
+            slider.setValue(min(int(round(_get(self.cfg, path) * scale)), slider.maximum()))
+            slider.blockSignals(False)
+            self._update_value_label(path)
+
+    # --- general field handlers ---------------------------------------------
+    def _on_camera_index(self, value: int) -> None:
+        self.cfg.camera.index = int(value)
+        self._win._apply_config_changes()
+
+    def _on_ocr_enabled(self, checked: bool) -> None:
+        self.cfg.ocr.enabled = bool(checked)
+        self._win._apply_config_changes()
+
+    def _on_ocr_lang(self) -> None:
+        self.cfg.ocr.language = self._ocr_lang.text().strip() or "eng"
+        self._win._apply_config_changes()
+
+    def _on_tesseract(self) -> None:
+        self.cfg.ocr.tesseract_cmd = self._tess.text().strip() or None
+        self._win._apply_config_changes()
+
+    def _on_paste_mode(self, text: str) -> None:
+        self.cfg.paste.mode = text
+        self._win._apply_config_changes()
+
+    def _on_paste_key(self) -> None:
+        self.cfg.paste.keystroke = self._paste_key.text().strip() or "ctrl+v"
+        self._win._apply_config_changes()
+
+    def _on_move_cursor(self, checked: bool) -> None:
+        self.cfg.console.move_cursor = bool(checked)
+        self._win.state.move_cursor = bool(checked)
+
+    # --- actions -------------------------------------------------------------
+    def _on_auto_pinch(self) -> None:
+        landmarks = self._win.state.landmarks
+        if landmarks is None:
+            self.set_status("Auto-pinch: hold a pinch in front of the camera first")
+            return
+        msg = _auto_pinch(self.cfg, pinch_distance(landmarks))
+        self._sync_sliders()
+        self._win._apply_config_changes()
+        self.set_status(msg)
+
+    def _on_save(self) -> None:
+        self.set_status(self._win.save_station_config())
+
+    def _on_restart(self) -> None:
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Restart station app",
+            "This stops any running background station instance and starts it again so it "
+            "reloads the saved config. Continue?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        if reply == QtWidgets.QMessageBox.Yes:
+            self.set_status(self._win.restart_station_app())
+
+    def set_status(self, text: str) -> None:
+        self._status.setText(text)
+
+
 class ConsoleWindow(QtWidgets.QMainWindow):
-    def __init__(self, cfg: Config) -> None:
+    def __init__(self, cfg: Config, save_path: str | None = None) -> None:
         super().__init__()
         self.cfg = cfg
+        self._save_path = save_path or str(Path("config") / "station.yaml")
         self.setWindowTitle("hand-txt-copy — console")
         self.resize(1000, 680)
 
@@ -380,9 +597,26 @@ class ConsoleWindow(QtWidgets.QMainWindow):
         self._toast_rgb = _STATUS_AMBER[0]
         self._toast_until = 0.0
 
+        # Keys for guarded module rebuilds when settings change live (see _apply_config_changes).
+        self._mapper_key = (cfg.cursor.one_euro_min_cutoff, cfg.cursor.one_euro_beta)
+        self._camera_key = cfg.camera.index
+        self._ocr_key = (cfg.ocr.enabled, cfg.ocr.language, cfg.ocr.tesseract_cmd)
+        self._paste_key = (cfg.paste.mode, cfg.paste.keystroke)
+
         # Always-on-top badge + selection rectangle, visible over every other window.
         self.overlay = ScreenOverlay()
         self.overlay.show()
+
+        # Configure/calibrate panel in a right-side dock (hidden until toggled with C).
+        self.settings = SettingsPanel(self)
+        self.settings_dock = QtWidgets.QDockWidget("Configure / Calibrate", self)
+        self.settings_dock.setWidget(self.settings)
+        self.settings_dock.setAllowedAreas(
+            QtCore.Qt.RightDockWidgetArea | QtCore.Qt.LeftDockWidgetArea
+        )
+        self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.settings_dock)
+        self.settings_dock.hide()
+        self.dash.configure_btn.clicked.connect(self.toggle_settings)
 
         self.camera.start()
         self.timer = QtCore.QTimer(self)
@@ -407,8 +641,80 @@ class ConsoleWindow(QtWidgets.QMainWindow):
         elif event.key() == QtCore.Qt.Key_M:
             self.state.move_cursor = not self.state.move_cursor
             log.info("OS cursor control: %s", "ON" if self.state.move_cursor else "OFF")
+        elif event.key() == QtCore.Qt.Key_C:
+            self.toggle_settings()
         else:
             super().keyPressEvent(event)
+
+    def toggle_settings(self) -> None:
+        """Show/hide the configure panel; while open, show the detail view for live preview."""
+        if self.settings_dock.isVisible():
+            self.settings_dock.hide()
+            self.exit_full()
+        else:
+            self.state.mode = "DETAIL"
+            self.stack.setCurrentWidget(self.full)
+            self.showNormal()
+            self.settings_dock.show()
+
+    def _apply_config_changes(self) -> None:
+        """Rebuild only the modules that cache config at construction; the rest read cfg live."""
+        cfg = self.cfg
+        mapper_key = (cfg.cursor.one_euro_min_cutoff, cfg.cursor.one_euro_beta)
+        if mapper_key != self._mapper_key:
+            self.mapper = CursorMapper(cfg.cursor, self._screen_size)
+            self._mapper_key = mapper_key
+        if cfg.camera.index != self._camera_key:
+            try:
+                self.camera.stop()
+                self.camera = Camera(cfg.camera)
+                self.camera.start()
+                self._camera_key = cfg.camera.index
+            except Exception:
+                log.exception("camera reconnect failed for index %s", cfg.camera.index)
+        ocr_key = (cfg.ocr.enabled, cfg.ocr.language, cfg.ocr.tesseract_cmd)
+        if ocr_key != self._ocr_key:
+            self.ocr = OcrEngine(cfg.ocr)
+            self._ocr_key = ocr_key
+        paste_key = (cfg.paste.mode, cfg.paste.keystroke)
+        if paste_key != self._paste_key:
+            self.paster = Paster(cfg.paste)
+            self._paste_key = paste_key
+
+    def save_station_config(self) -> str:
+        """Write the live config to the station file auto-start prefers; return a status line."""
+        self._apply_config_changes()
+        try:
+            save_config(self.cfg, self._save_path)
+            log.info("saved station config to %s", self._save_path)
+            msg = f"Saved → {Path(self._save_path).name} (auto-start will use it)"
+            self._toast("Config saved", (60, 200, 90))
+            return msg
+        except Exception as exc:  # invalid combination (e.g. pinch_on >= pinch_off)
+            log.warning("save failed: %s", exc)
+            self._toast("Save failed", (220, 60, 60))
+            return f"Save failed: {exc}"
+
+    def restart_station_app(self) -> str:
+        """Bounce the background station app (stop then start) so it reloads the saved config."""
+        import subprocess
+
+        root = Path(self._save_path).resolve().parent.parent
+        stop_bat = root / "stop-hand-txt-copy.bat"
+        start_bat = root / "start-hand-txt-copy.bat"
+        if not start_bat.is_file():
+            return f"start script not found: {start_bat}"
+        try:
+            if stop_bat.is_file():
+                subprocess.run(["cmd", "/c", str(stop_bat)], cwd=str(root), check=False)
+            subprocess.Popen(["cmd", "/c", str(start_bat)], cwd=str(root))
+            log.info("restarted station app via %s", start_bat)
+            self._toast("Station app restarted", (60, 200, 90))
+            return "Station app restarted"
+        except Exception as exc:
+            log.exception("restart failed")
+            self._toast("Restart failed", (220, 60, 60))
+            return f"Restart failed: {exc}"
 
     def _tick(self) -> None:
         import cv2
@@ -446,9 +752,7 @@ class ConsoleWindow(QtWidgets.QMainWindow):
 
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         h, w = rgb.shape[:2]
-        self.state.qimage = QtGui.QImage(
-            rgb.data, w, h, 3 * w, QtGui.QImage.Format_RGB888
-        ).copy()
+        self.state.qimage = QtGui.QImage(rgb.data, w, h, 3 * w, QtGui.QImage.Format_RGB888).copy()
         self._refresh()
 
     # --- click / copy / paste / cancel state machine -------------------------
@@ -566,14 +870,19 @@ class ConsoleWindow(QtWidgets.QMainWindow):
         super().closeEvent(event)
 
 
-def run_console(cfg: Config) -> int:
-    """Launch the console window and run the Qt event loop."""
+def run_console(cfg: Config, save_path: str | None = None) -> int:
+    """Launch the console window and run the Qt event loop.
+
+    ``save_path`` is where the in-console configure/calibrate panel writes (defaults to
+    ``config/station.yaml``), which ``start-hand-txt-copy.bat`` prefers — so saving affects
+    auto-start.
+    """
     import sys
 
     # Must precede QApplication so Qt, screen metrics, and cursor coords all use physical pixels.
     winmouse.set_dpi_aware()
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
-    window = ConsoleWindow(cfg)
+    window = ConsoleWindow(cfg, save_path)
     window.show()
     log.info("console window started")
     return app.exec()
